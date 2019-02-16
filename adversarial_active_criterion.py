@@ -46,7 +46,7 @@ class Adversarial_example(object):
             norm_weights = 1
             for layer in layers:
                 if hasattr(layer, 'kernel'):
-                    w = np.linalg.norm(layer.kernel.get_value().flatten())
+                    w = np.linalg.norm(get_value(layer.kernel).flatten())
                     norm_weights*=w
             return norm_weights
         

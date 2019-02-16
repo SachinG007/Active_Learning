@@ -33,6 +33,9 @@ import pickle
 import gc
 from keras.preprocessing.image import ImageDataGenerator
 
+# f= open("results.txt","w")
+test_errs = []
+
 #%%
 import resource
 from keras.callbacks import Callback
@@ -67,8 +70,10 @@ def active_training(labelled_data, network_name, img_size,  train_num = 1,
         generator_train.fit(x_train, seed=0, augment=True)
         tmp = generator_train.flow(x_train, y_train, batch_size=batch_size)
         if train_num == 1:
+            print('New Model Being Created')
             model = build_model_func(network_name, img_size)
         else:
+            print('Previous Model Being Loded')
             model = load_model('my_model.h5')
         earlyStopping=keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, verbose=0, mode='auto')
         print('active training starts')
@@ -78,8 +83,8 @@ def active_training(labelled_data, network_name, img_size,  train_num = 1,
                                    validation_data=(x_val, y_val))
         print('active training ends')
         loss, acc = model.evaluate(x_val, y_val, verbose=0)
-        print('loss ',loss)
-        print('acc ',acc)
+        print('training loss ',loss)
+        print('training acc ',acc)
         if loss < best_loss:
             best_loss = loss;
             best_model = model
@@ -99,6 +104,10 @@ def evaluate(model, percentage, test_data, nb_exp, repo, filename):
     loss, acc = model.evaluate(x_test, y_test, verbose=0)
     print('test acc: ',acc)
     
+    # f.write(acc)
+    # f.write("%d\r\n" % (acc))
+    test_errs.append(acc)
+
     with closing(open(os.path.join(repo, filename), 'a')) as csvfile:
         # TO DO
         writer = csv.writer(csvfile, delimiter=';',
@@ -387,7 +396,7 @@ def save_adv(repo, filename, img, adv_img):
 
 #%%
 def active_learning(num_sample, data_name, network_name, active_name,
-                    nb_exp=0, nb_query=1000, repo='test', filename='test.csv'):
+                    nb_exp=0, nb_query=50, repo='test', filename='test.csv'):
     
     # create a model and do a reinit function
     tmp_filename = 'tmp_{}_{}_{}.pkl'.format(data_name, network_name, active_name)
@@ -405,12 +414,13 @@ def active_learning(num_sample, data_name, network_name, active_name,
     N_pool = len(labelled_data[0]) + len(unlabelled_data[0])
     print('Size of Total Data', N_pool)
     # load data
-    i=0
-    while( percentage_data<=N_pool):
-        i=i+1
-        print('Round ',i,' of active learning')
+    j=0
+    while( j<30):#percentage_data<=N_pool):
+
+        j=j+1
+        print('Round ',j,' of active learning')
         print('labelled data: ',percentage_data)
-        model = active_training(labelled_data, network_name, img_size, i, batch_size=batch_size)
+        model = active_training(labelled_data, network_name, img_size, j, batch_size=batch_size)
         
         query, unlabelled_data = active_selection(model, unlabelled_data, nb_query, active_name, repo, tmp_adv) # TO DO
         
@@ -432,6 +442,9 @@ def active_learning(num_sample, data_name, network_name, active_name,
         #update percentage_data
         percentage_data +=nb_query
         
+    with open('your_file.txt', 'w') as f:    
+        for item in test_errs:
+            f.write("%s\n"%item)
     return
 #%%
 if __name__=="__main__":
@@ -441,7 +454,7 @@ if __name__=="__main__":
     parser.add_argument('--id_experiment', type=int, default=4, help='id number of experiment')
     parser.add_argument('--repo', type=str, default='.', help='repository for log')
     parser.add_argument('--filename', type=str, default='test_0', help='csv filename')
-    parser.add_argument('--num_sample', type=int, default=4500, help='size of the initial training set')
+    parser.add_argument('--num_sample', type=int, default=4, help='size of the initial training set')
     parser.add_argument('--data_name', type=str, default='mnist', help='dataset')
     parser.add_argument('--network_name', type=str, default='LeNet5', help='network')
     parser.add_argument('--active', type=str, default='random', help='active techniques')
@@ -462,7 +475,7 @@ if __name__=="__main__":
     network_name = args.network_name
     active_option = args.active
     num_sample = args.num_sample
-    
+
     active_learning(num_sample=num_sample,
                     data_name=data_name,
                     network_name=network_name,
