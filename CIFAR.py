@@ -16,6 +16,8 @@ os.environ["CUDA_VISIBLE_DEVICES"]="0,1"
 
 labelled_mask  = list(range(0,2000))
 unlabelled_mask = list(range(2000, 40000))
+unlabelled_mask_rand = []
+query = 500
 lm = len(labelled_mask)
 um = len(unlabelled_mask)
 print('len of labelled_mask: ',lm)
@@ -184,6 +186,7 @@ def active_learn(unlabelled_data, model):
     print("active_learn")
     global labelled_mask
     global unlabelled_mask
+    global unlabelled_mask_rand
     pert_norms = []
     for batch_idx, (data, target) in enumerate(unlabelled_data):
         # data, target = data.to(device), target.to(device)
@@ -196,9 +199,11 @@ def active_learn(unlabelled_data, model):
             print(batch_idx)
 
     pert_norms = np.array(pert_norms)
-    min_norms = pert_norms.argsort()[:500]
+    print('len of total query deep fools ',len(pert_norms))
+    min_norms = pert_norms.argsort()[:query]
+    print(min_norms)
 
-    add_labels = [unlabelled_mask[i] for i in min_norms]
+    add_labels = [unlabelled_mask_rand[i] for i in min_norms]
     labelled_mask = labelled_mask + add_labels
     unlabelled_mask = [x for x in unlabelled_mask if x not in add_labels]
     # lm = len(labelled_mask)
@@ -288,8 +293,12 @@ def main():
 
         labelled_data = torch.utils.data.DataLoader(trainset, batch_size=32,
                                               sampler = SubsetRandomSampler(labelled_mask), shuffle=False, num_workers=2)
+        global unlabelled_mask_rand
+        unlabelled_mask_rand = random.sample(unlabelled_mask, 2*query)
+        
         unlabelled_data = torch.utils.data.DataLoader(trainset, batch_size=1,
-                                              sampler = SubsetRandomSampler(unlabelled_mask), shuffle=False, num_workers=2)
+                                              sampler = SubsetRandomSampler(unlabelled_mask_rand), shuffle=False, num_workers=2)
+        
         test_data = torch.utils.data.DataLoader(testset, batch_size=10,
                                           sampler = None, shuffle=False, num_workers=2)
 
