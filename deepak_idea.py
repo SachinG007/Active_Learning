@@ -13,6 +13,7 @@ from vgg import content_encoder
 import random
 import sys
 import cifar10_subset as nl
+import load_various_classes as dt
 
 
 import os
@@ -71,92 +72,37 @@ def train(args, model, device, train_loader, optimizer, epoch):
         loss = F.cross_entropy(output2, target)
         loss.backward()
         optimizer.step()
-        # if batch_idx % args.log_interval == 0:
-        #     print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-        #         epoch, batch_idx * len(data), len(train_loader.dataset),
-        #         100. * batch_idx / len(train_loader), loss.item()))
 
-def coreset(args, model, device, labelled_data, unlabelled_data, optimizer):
+def calc_perturbation(avg_pert_norms,all_data_list,model):
 
-    global labelled_mask
-    global unlabelled_mask
+    for i in range(10):
 
-    dist_mat_sum = np.zeros((48500,48500))
-    for itern in range(64):
-        print(itern)
+        pert_norms_list = []
+        pert_sum = 0; 
+        for batch_idx, (data, target) in enumerate(all_data_list[i]):
 
-        # dist = torch.tensor([])
-        # dist = dist.to(device)
-        dist = []
-
-
-        for batch_idx, (data, target) in enumerate(labelled_data):
             data, target = data.to(device), target.to(device)
-            # optimizer.zero_grad()
-            output,last_features = model(data)
-            #extracting last layer features
-            encoding = last_features[:,511,:,:]
-            x,y,z = np.shape(encoding)
-            #64 encodings of 32 (batch size) images 
-            img_encoding = encoding.reshape(x,y*z)
+            rdata = np.reshape(data,(3,64,64))
 
-            current_img_encoding = img_encoding[:,itern]
-            new_data = (current_img_encoding.data).cpu().numpy()
-            # dist = torch.cat([dist,current_img_encoding])
-            # import pdb; pdb.set_trace()
-            dist = np.append(dist,new_data)
-            # import pdb; pdb.set_trace()
+            r, loop_i, label_orig, label_pert, pert_image = deepfool(rdata, model)
+            #r is a matrix, linalg.norm gets the l2 norm of matrix
+            temp_val = np.linalg.norm(r)
+            pert_sum += temp_val
+            pert_norms_list.append(temp_val)
 
-        x = np.shape(dist)
-        num_labelled = x[0]
-        print("labelled done")
+        pert_sum = pert_sum/50
+        avg_pert_norms.append(pert_sum)
 
-        for batch_idx, (data, target) in enumerate(unlabelled_data):
-            data, target = data.to(device), target.to(device)
-            # optimizer.zero_grad()
-            output,last_features = model(data)
-            #extracting last layer features
-            encoding = last_features[:,511,:,:]
-            x,y,z = np.shape(encoding)
-            #64 encodings of 32 (batch size) images 
-            img_encoding = encoding.reshape(x,y*z)
 
-            current_img_encoding = img_encoding[:,itern]
-            new_data = (current_img_encoding.data).cpu().numpy()
-            # dist = torch.cat([dist,current_img_encoding])
-            # import pdb; pdb.set_trace()
-            dist = np.append(dist,new_data)
-            # import pdb; pdb.set_trace()
-        print("unlabelled done")
 
-        # import pdb; pdb.set_trace()
-        x = np.shape(dist)
-        dist_a = np.asarray(dist)
-        dist_vec = np.reshape(dist_a,(x[0],1))
-        dist_mat = np.matmul(dist_vec,dist_vec.transpose())
-        x,y = np.shape(dist_mat)
-        sq = np.array(dist_mat.diagonal()).reshape(x,1)
-        dist_mat *= -2
-        dist_mat+=sq
-        dist_mat+=sq.transpose()
-        print("debug 6")
-        
-        dist_mat_sum = np.add(dist_mat_sum,dist_mat)
-        print("done this iter")
+def active_learn_hier(all_data_list,model,active_learn_iter):
 
-    
-    import pdb; pdb.set_trace()
-    xx,yy = np.shape(dist_mat_sum)
+    list_of_pert_norms = []
+    avg_pert_norms = []
+    calc_perturbation(avg_pert_norms,all_data_list,model)
+    print(avg_pert_norms)
 
-    useful_dist = dist_mat_sum[0:num_labelled,num_labelled:]
-    b = np.amin(useful_dist, axis=0)
-    import pdb; pdb.set_trace()
-    min_norms = b.argsort()[:query]
-    # print(min_norms)
-
-    add_labels = [unlabelled_mask[i] for i in min_norms]
-    labelled_mask = labelled_mask + add_labels
-    unlabelled_mask = [x for x in unlabelled_mask if x not in add_labels]
+    if active_learn_iter==0:
 
 
 def test(args, model, device, test_loader):
@@ -245,25 +191,16 @@ def main():
         global unlabelled_mask_rand
         # unlabelled_mask_rand = random.sample(unlabelled_mask, 2*query)
         unlabelled_mask_rand = np.random.choice(unlabelled_mask, 2*query)
-        print('Random Numer 1 for test ', unlabelled_mask_rand[0])
         
-        unlabelled_data = torch.utils.data.DataLoader(trainset, batch_size=1,
-                                              sampler = SubsetRandomSampler(unlabelled_mask_rand), shuffle=False, num_workers=2)
-        
-        complete_unlabelled_data = torch.utils.data.DataLoader(trainset, batch_size=32,
-                                              sampler = SubsetRandomSampler(unlabelled_mask), shuffle=False, num_workers=2)      
+        # unlabelled_data = torch.utils.data.DataLoader(trainset, batch_size=1,
+        #                                       sampler = SubsetRandomSampler(unlabelled_mask_rand), shuffle=False, num_workers=2)
 
         test_data = torch.utils.data.DataLoader(testset, batch_size=10,
                                           sampler = None, shuffle=False, num_workers=2)
 
 
         model = content_encoder(10).to(device)
-        # model = models.resnet50(pretrained=True)
-        # num_ftrs = model.fc.in_features
-        # model.fc = nn.Linear(num_ftrs, 10)
         model.cuda()
-        # if active_learn_iter != 0:
-        #     model.load_state_dict(torch.load("cifar_resnet.pt"))
 
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
@@ -272,9 +209,12 @@ def main():
             train(args, model, device, labelled_data, optimizer, epoch)
         test(args, model, device, test_data)
 
+        active_learn_hier(dt.all_data_list,model,active_learn_iter)
         # active_learn(unlabelled_data,model)
-        coreset(args, model, device, labelled_data, complete_unlabelled_data, optimizer)
+        # coreset(args, model, device, labelled_data, complete_unlabelled_data, optimizer)
         # rand_samp()
+
+        #some check prints
         print("active_learn over")
         lm = len(labelled_mask)
         um = len(unlabelled_mask)
