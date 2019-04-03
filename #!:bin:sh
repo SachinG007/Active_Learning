@@ -1,0 +1,3 @@
+#!/bin/sh
+## run command 10 times 
+for i in {1..5}; do python CIFAR_CoreSet.py; done

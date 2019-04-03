@@ -52,7 +52,7 @@ class content_encoder(nn.Module):
         h3 = self.c3(self.mp(h2)) # 16 -> 8
         h4 = self.c4(self.mp(h3)) # 8 -> 4
         h5 = self.c5(self.mp(h4)) # 4 -> 1
-        return h5
+        return h5,h4
 
 
 class decoder(nn.Module):

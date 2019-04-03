@@ -254,7 +254,7 @@ def test(args, model, device, test_loader):
 
 def main():
     # Training settings
-    np.random.seed(1)
+    # np.random.seed(2)
 
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N',
@@ -269,7 +269,7 @@ def main():
                         help='SGD momentum (default: 0.5)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
-    parser.add_argument('--seed', type=int, default=1, metavar='S',
+    parser.add_argument('--seed', type=int, default=2, metavar='S',
                         help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
@@ -279,7 +279,7 @@ def main():
     args = parser.parse_args()
     use_cuda = not args.no_cuda and torch.cuda.is_available()
 
-    torch.manual_seed(args.seed)
+    # torch.manual_seed(args.seed)
 
     device = torch.device("cuda" if use_cuda else "cpu")
 
@@ -346,7 +346,7 @@ def main():
         active_learn_iter = active_learn_iter + 1
 
 
-        with open('results_adversarial_cifar.txt', 'w') as f:   
+        with open('results_adversarial_cifar_2april.txt', 'w') as f:   
 
             for item in test_accs:
                 f.write("%s\n"%item)

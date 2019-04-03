@@ -143,9 +143,7 @@ def build_mnist(num_sample):
     x_train = x_train[index]
     y_train = kutils.to_categorical(y_train[index])
     
-    x_L = x_train[:num_sample]; y_L = y_train[:num_sample]
-    
-    x_U = x_train[num_sample:]; y_U = y_train[num_sample:]
+n
     
     return (x_L, y_L), (x_U, y_U), (x_test, kutils.to_categorical(y_test))
     
