@@ -22,7 +22,22 @@ os.environ["CUDA_VISIBLE_DEVICES"]="0,1"
 labelled_mask  = list(range(0,500))
 unlabelled_mask = list(range(2000, 50000))
 unlabelled_mask_rand = []
+
+
+list_unlab_data_mask = []
+for i in range(10):
+    data_mask  = list(range(51,5000))
+    list_unlab_data_mask.append([data_mask])
+
+list_lab_data_mask = []
+for i in range(10):
+    lab_data_mask  = list(range(0,50))
+    list_lab_data_mask.append([lab_data_mask])
+
+list_selected_mask = []
+
 query = 500
+part_query = query/10
 lm = len(labelled_mask)
 um = len(unlabelled_mask)
 print('len of labelled_mask: ',lm)
@@ -59,27 +74,30 @@ def active_learn(unlabelled_data, model):
     # print('len of labelled_mask: ',lm)
     # print('len of unlabelled_mask: ',um)
 
-def train(args, model, device, train_loader, optimizer, epoch):
-    model.train()
-    for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = data.to(device), target.to(device)
-        optimizer.zero_grad()
-        output,last_features = model(data)
+def train(args, model, device, all_lab_data_list, optimizer, epoch):
 
-        output2 = output.reshape(output.shape[0],output.shape[1])
-        # output_softmax = F.softmax(output)
-        
-        loss = F.cross_entropy(output2, target)
-        loss.backward()
-        optimizer.step()
+    for j in range(10):
 
-def calc_perturbation(avg_pert_norms,all_data_list,model):
+        model.train()
+        for batch_idx, (data, target) in enumerate(all_lab_data_list[j]):
+            data, target = data.to(device), target.to(device)
+            optimizer.zero_grad()
+            output,last_features = model(data)
+
+            output2 = output.reshape(output.shape[0],output.shape[1])
+            # output_softmax = F.softmax(output)
+            
+            loss = F.cross_entropy(output2, target)
+            loss.backward()
+            optimizer.step()
+
+def calc_perturbation(list_list_pert,avg_pert_norms,all_unlab_data_list,model):
 
     for i in range(10):
 
         pert_norms_list = []
         pert_sum = 0; 
-        for batch_idx, (data, target) in enumerate(all_data_list[i]):
+        for batch_idx, (data, target) in enumerate(all_unlab_data_list[i]):
 
             data, target = data.to(device), target.to(device)
             rdata = np.reshape(data,(3,64,64))
@@ -92,18 +110,31 @@ def calc_perturbation(avg_pert_norms,all_data_list,model):
 
         pert_sum = pert_sum/50
         avg_pert_norms.append(pert_sum)
+        list_list_pert.append([pert_norms_list])
 
 
 
-def active_learn_hier(all_data_list,model,active_learn_iter):
+def active_learn_hier(all_unlab_data_list,model,active_learn_iter):
 
-    list_of_pert_norms = []
+    global list_unlab_data_mask
+    global list_lab_data_mask
+    global list_selected_mask
+
+    list_list_pert = []
     avg_pert_norms = []
-    calc_perturbation(avg_pert_norms,all_data_list,model)
+    calc_perturbation(list_list_pert,avg_pert_norms,all_unlab_data_list,model)
     print(avg_pert_norms)
 
     if active_learn_iter==0:
 
+        for j in range(10):
+            jth_list = np.array(list_list_pert[j])
+            part_query = query/10
+            min_norms = pert_norms.argsort()[:part_query]
+        
+            add_labels = [list_selected_mask[j][i] for i in min_norms]
+            list_lab_data_mask[j] = list_lab_data_mask[j] + add_labels
+            list_unlab_data_mask[j] = [x for x in list_unlab_data_mask if x not in add_labels]
 
 def test(args, model, device, test_loader):
     model.eval()
@@ -166,12 +197,6 @@ def main():
 
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
     
-    trainset = datasets.CIFAR10('../data', train=True, download=True,
-                       transform=transforms.Compose([
-                           transforms.Resize((64,64), interpolation=2),
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.1307,), (0.3081,))
-                       ]))
     testset = datasets.CIFAR10('../data', train=False, download=True,
                    transform=transforms.Compose([
                        transforms.Resize((64,64), interpolation=2),
@@ -186,14 +211,41 @@ def main():
     while active_learn_iter<30:
 
         print('Active learning Iter: ', active_learn_iter)
-        labelled_data = torch.utils.data.DataLoader(trainset, batch_size=32,
-                                              sampler = SubsetRandomSampler(labelled_mask), shuffle=False, num_workers=2)
-        global unlabelled_mask_rand
-        # unlabelled_mask_rand = random.sample(unlabelled_mask, 2*query)
-        unlabelled_mask_rand = np.random.choice(unlabelled_mask, 2*query)
-        
-        # unlabelled_data = torch.utils.data.DataLoader(trainset, batch_size=1,
-        #                                       sampler = SubsetRandomSampler(unlabelled_mask_rand), shuffle=False, num_workers=2)
+
+        kwargs = {'num_workers': 2, 'pin_memory': False}
+
+        #labelled training data
+        lab_plane_data   = torch.utils.data.DataLoader(plane_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[0]), shuffle=False , **kwargs)
+        lab_car_data   = torch.utils.data.DataLoader(car_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[1]),  shuffle=False , **kwargs)
+        lab_bird_data   = torch.utils.data.DataLoader(bird_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[2]), shuffle=False , **kwargs)
+        lab_cat_data   = torch.utils.data.DataLoader(cat_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[3]), shuffle=False , **kwargs)
+        lab_deer_data   = torch.utils.data.DataLoader(deer_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[4]), shuffle=False , **kwargs)
+        lab_dog_data   = torch.utils.data.DataLoader(dog_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[5]), shuffle=False , **kwargs)
+        lab_frog_data   = torch.utils.data.DataLoader(frog_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[6]), shuffle=False , **kwargs)
+        lab_horse_data   = torch.utils.data.DataLoader(horse_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[7]), shuffle=False , **kwargs)
+        lab_ship_data   = torch.utils.data.DataLoader(ship_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[8]), shuffle=False , **kwargs)
+        lab_truck_data   = torch.utils.data.DataLoader(truck_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[9]), shuffle=False , **kwargs)
+
+        all_lab_data_list = [lab_plane_data , lab_car_data, lab_bird_data, lab_car_data, lab_deer_data, lab_frog_trainset, lab_horse_data, lab_ship_data, lab_truck_data]
+
+        for i in range(10):
+            selected_data_mask = np.random.choice(list_unlab_data_mask[i], 2*part_query)
+            list_selected_mask.append([selected_data_mask])
+
+        # Create datasetLoaders from trainset and testset
+        # classDict = {'plane':0, 'car':1, 'bird':2, 'cat':3, 'deer':4, 'dog':5, 'frog':6, 'horse':7, 'ship':8, 'truck':9}
+        plane_data   = torch.utils.data.DataLoader(plane_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[0]), shuffle=False , **kwargs)
+        car_data   = torch.utils.data.DataLoader(car_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[1]),  shuffle=False , **kwargs)
+        bird_data   = torch.utils.data.DataLoader(bird_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[2]), shuffle=False , **kwargs)
+        cat_data   = torch.utils.data.DataLoader(cat_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[3]), shuffle=False , **kwargs)
+        deer_data   = torch.utils.data.DataLoader(deer_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[4]), shuffle=False , **kwargs)
+        dog_data   = torch.utils.data.DataLoader(dog_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[5]), shuffle=False , **kwargs)
+        frog_data   = torch.utils.data.DataLoader(frog_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[6]), shuffle=False , **kwargs)
+        horse_data   = torch.utils.data.DataLoader(horse_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[7]), shuffle=False , **kwargs)
+        ship_data   = torch.utils.data.DataLoader(ship_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[8]), shuffle=False , **kwargs)
+        truck_data   = torch.utils.data.DataLoader(truck_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[9]), shuffle=False , **kwargs)
+
+        all_unlab_data_list = [plane_data , car_data, bird_data, car_data, deer_data, frog_trainset, horse_data, ship_data, truck_data]
 
         test_data = torch.utils.data.DataLoader(testset, batch_size=10,
                                           sampler = None, shuffle=False, num_workers=2)
@@ -206,10 +258,10 @@ def main():
 
         for epoch in range(1, args.epochs + 1):
             print('epochs: ',epoch)
-            train(args, model, device, labelled_data, optimizer, epoch)
+            train(args, model, device, all_lab_data_list, optimizer, epoch)
         test(args, model, device, test_data)
 
-        active_learn_hier(dt.all_data_list,model,active_learn_iter)
+        active_learn_hier(all_unlab_data_list,model,active_learn_iter)
         # active_learn(unlabelled_data,model)
         # coreset(args, model, device, labelled_data, complete_unlabelled_data, optimizer)
         # rand_samp()

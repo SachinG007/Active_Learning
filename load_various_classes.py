@@ -82,21 +82,28 @@ truck_trainset = \
 kwargs = {'num_workers': 2, 'pin_memory': False}
 
 query = 50
-data_mask  = list(range(0,5000))
-selected_data_mask = np.random.choice(data_mask, 2*query)
+list_data_mask = []
+for i in range(10):
+    data_mask  = list(range(0,5000))
+    list_data_mask.append([data_mask])
+
+list_selected_mask = []
+for i in range(10):
+    selected_data_mask = np.random.choice(list_data_mask[i], 2*query)
+    list_selected_mask.append([selected_data_mask])
 
 # Create datasetLoaders from trainset and testset
 # classDict = {'plane':0, 'car':1, 'bird':2, 'cat':3, 'deer':4, 'dog':5, 'frog':6, 'horse':7, 'ship':8, 'truck':9}
-plane_data   = torch.utils.data.DataLoader(plane_trainset, batch_size=1, sampler = SubsetRandomSampler(selected_data_mask), shuffle=False , **kwargs)
-car_data   = torch.utils.data.DataLoader(car_trainset, batch_size=1, sampler = SubsetRandomSampler(selected_data_mask),  shuffle=False , **kwargs)
-bird_data   = torch.utils.data.DataLoader(bird_trainset, batch_size=1, sampler = SubsetRandomSampler(selected_data_mask), shuffle=False , **kwargs)
-cat_data   = torch.utils.data.DataLoader(cat_trainset, batch_size=1, sampler = SubsetRandomSampler(selected_data_mask), shuffle=False , **kwargs)
-deer_data   = torch.utils.data.DataLoader(deer_trainset, batch_size=1, sampler = SubsetRandomSampler(selected_data_mask), shuffle=False , **kwargs)
-dog_data   = torch.utils.data.DataLoader(dog_trainset, batch_size=1, sampler = SubsetRandomSampler(selected_data_mask), shuffle=False , **kwargs)
-frog_data   = torch.utils.data.DataLoader(frog_trainset, batch_size=1, sampler = SubsetRandomSampler(selected_data_mask), shuffle=False , **kwargs)
-horse_data   = torch.utils.data.DataLoader(horse_trainset, batch_size=1, sampler = SubsetRandomSampler(selected_data_mask), shuffle=False , **kwargs)
-ship_data   = torch.utils.data.DataLoader(ship_trainset, batch_size=1, sampler = SubsetRandomSampler(selected_data_mask), shuffle=False , **kwargs)
-truck_data   = torch.utils.data.DataLoader(truck_trainset, batch_size=1, sampler = SubsetRandomSampler(selected_data_mask), shuffle=False , **kwargs)
+plane_data   = torch.utils.data.DataLoader(plane_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[0]), shuffle=False , **kwargs)
+car_data   = torch.utils.data.DataLoader(car_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[1]),  shuffle=False , **kwargs)
+bird_data   = torch.utils.data.DataLoader(bird_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[2]), shuffle=False , **kwargs)
+cat_data   = torch.utils.data.DataLoader(cat_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[3]), shuffle=False , **kwargs)
+deer_data   = torch.utils.data.DataLoader(deer_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[4]), shuffle=False , **kwargs)
+dog_data   = torch.utils.data.DataLoader(dog_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[5]), shuffle=False , **kwargs)
+frog_data   = torch.utils.data.DataLoader(frog_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[6]), shuffle=False , **kwargs)
+horse_data   = torch.utils.data.DataLoader(horse_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[7]), shuffle=False , **kwargs)
+ship_data   = torch.utils.data.DataLoader(ship_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[8]), shuffle=False , **kwargs)
+truck_data   = torch.utils.data.DataLoader(truck_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[9]), shuffle=False , **kwargs)
 
 all_data_list = [plane_data , car_data, bird_data, car_data, deer_data, frog_trainset, horse_data, ship_data, truck_data]
 
