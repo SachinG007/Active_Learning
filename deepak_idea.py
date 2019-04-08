@@ -35,8 +35,8 @@ for i in range(10):
 
 list_selected_mask = []
 
-query = 10
-class_query = 1
+query = 500
+class_query = 50
 lm = len(labelled_mask)
 um = len(unlabelled_mask)
 print('len of labelled_mask: ',lm)
@@ -48,13 +48,11 @@ def train(args, model, device, all_lab_data_list, optimizer, epoch):
 
     model.train()
     for j in range(10):
-        # print(j)
-        # import pdb;pdb.set_trace()
+
         for batch_idx, (data, target) in enumerate(all_lab_data_list[j]):
-        # for batch_idx, (data, target) in enumerate(all_lab_data_list):
             data, target = data.to(device), target.to(device)
             optimizer.zero_grad()
-            # import pdb;pdb.set_trace()
+        
             output = model(data)
 
             output2 = output.reshape(output.shape[0],output.shape[1])
@@ -93,8 +91,8 @@ def active_learn_hier(all_unlab_data_list,model,active_learn_iter, device):
     global list_lab_data_mask
     global list_selected_mask
     global prev_avg_pert_norms
-    query = 10
-    class_query = 1
+    query = 500
+    class_query = 50
     list_list_pert = []
     avg_pert_norms = []
 
@@ -117,8 +115,6 @@ def active_learn_hier(all_unlab_data_list,model,active_learn_iter, device):
             # add_labels = [tmp_arr[i] for i in min_norms]
             add_labels = np.take(tmp_arr,min_norms)
             add_labels_l = add_labels.tolist()
-            # add_labels = add_labels.tolist()
-            # import pdb;pdb.set_trace()
             list_lab_data_mask[j][0] = list_lab_data_mask[j][0] + add_labels_l
             list_unlab_data_mask[j][0] = [x for x in list_unlab_data_mask[j][0] if x not in add_labels_l]
 
@@ -149,8 +145,6 @@ def active_learn_hier(all_unlab_data_list,model,active_learn_iter, device):
             print(np.size(add_labels_l))
             if np.size(add_labels_l)!=0:
 
-                # add_labels = add_labels.tolist()
-                # import pdb;pdb.set_trace()
                 list_lab_data_mask[j][0] = list_lab_data_mask[j][0] + add_labels_l
                 print("Modified lab data list size ",np.size(list_lab_data_mask[j][0]))
                 list_unlab_data_mask[j][0] = [x for x in list_unlab_data_mask[j][0] if x not in add_labels_l]
@@ -196,7 +190,7 @@ def main():
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=2, metavar='N',
+    parser.add_argument('--epochs', type=int, default=50, metavar='N',
                         help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                         help='learning rate (default: 0.01)')
@@ -254,7 +248,6 @@ def main():
         lab_truck_data   = torch.utils.data.DataLoader(dt.truck_trainset, batch_size=32, sampler = SubsetRandomSampler(list(chain.from_iterable(list_lab_data_mask[9]))), shuffle=False , **kwargs)
 
         all_lab_data_list = [lab_plane_data , lab_car_data, lab_bird_data, lab_cat_data, lab_deer_data, lab_dog_data, lab_frog_data, lab_horse_data, lab_ship_data, lab_truck_data, ]
-        # import pdb;pdb.set_trace()
         list_selected_mask = []
         for i in range(10):
             selected_data_mask = np.random.choice(list(chain.from_iterable(list_unlab_data_mask[i])), 2*class_query)
@@ -294,7 +287,6 @@ def main():
         #some check prints
         for kk in range(10):
             list_unlab_data_mask[kk][0] = [x for x in list_unlab_data_mask[kk][0] if x not in list_lab_data_mask[kk][0]]
-            import pdb;pdb.set_trace()
             print(np.size(list_lab_data_mask[kk]))
             print(np.size(list_unlab_data_mask[kk]))
 
