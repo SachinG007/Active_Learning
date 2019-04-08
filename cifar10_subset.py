@@ -5,21 +5,22 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 
 # Transformations
-RC   = transforms.RandomCrop(32, padding=4)
-RHF  = transforms.RandomHorizontalFlip()
-RVF  = transforms.RandomVerticalFlip()
-NRM  = transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+RC   = transforms.Resize((64,64), interpolation=2)
+# RHF  = transforms.RandomHorizontalFlip()
+# RVF  = transforms.RandomVerticalFlip()
+# NRM  = transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+NRM = transforms.Normalize((0.1307,), (0.3081,))
 TT   = transforms.ToTensor()
 TPIL = transforms.ToPILImage()
 
 # Transforms object for trainset with augmentation
-transform_with_aug = transforms.Compose([TPIL, RC, RHF, TT, NRM])
+transform_with_aug = transforms.Compose([ TPIL, RC, TT, NRM])
 # Transforms object for testset with NO augmentation
-transform_no_aug   = transforms.Compose([TT, NRM])
+transform_no_aug   = transforms.Compose([ TPIL, RC, TT, NRM])
 
 # Downloading/Louding CIFAR10 data
-trainset  = CIFAR10(root='./data', train=True , download=True)#, transform = transform_with_aug)
-testset   = CIFAR10(root='./data', train=False, download=True)#, transform = transform_no_aug)
+trainset  = CIFAR10(root='./data', train=True , download=True, transform = transform_with_aug)
+testset   = CIFAR10(root='./data', train=False, download=True, transform = transform_with_aug)
 classDict = {'plane':0, 'car':1, 'bird':2, 'cat':3, 'deer':4, 'dog':5, 'frog':6, 'horse':7, 'ship':8, 'truck':9}
 
 # Separating trainset/testset data/label

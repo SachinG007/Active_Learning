@@ -14,30 +14,29 @@ import random
 import sys
 import cifar10_subset as nl
 import load_various_classes as dt
-
+from itertools import chain
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="0,1"
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 labelled_mask  = list(range(0,500))
 unlabelled_mask = list(range(2000, 50000))
-unlabelled_mask_rand = []
-
+prev_avg_pert_norms = []
 
 list_unlab_data_mask = []
 for i in range(10):
-    data_mask  = list(range(51,5000))
-    list_unlab_data_mask.append([data_mask])
+    unlab_data_mask  = list(range(51,5000))
+    list_unlab_data_mask.append([unlab_data_mask])
 
 list_lab_data_mask = []
 for i in range(10):
-    lab_data_mask  = list(range(0,50))
+    lab_data_mask  = list(range(1,50))
     list_lab_data_mask.append([lab_data_mask])
 
 list_selected_mask = []
 
-query = 500
-part_query = query/10
+query = 10
+class_query = 1
 lm = len(labelled_mask)
 um = len(unlabelled_mask)
 print('len of labelled_mask: ',lm)
@@ -45,44 +44,18 @@ print('len of unlabelled_mask: ',um)
 test_accs = []
 
 
-def active_learn(unlabelled_data, model):
-    print("active_learn")
-    global labelled_mask
-    global unlabelled_mask
-    global unlabelled_mask_rand
-    pert_norms = []
-    for batch_idx, (data, target) in enumerate(unlabelled_data):
-        # data, target = data.to(device), target.to(device)
-        # import pdb;pdb.set_trace()
-        rdata = np.reshape(data,(3,64,64))
-        r, loop_i, label_orig, label_pert, pert_image = deepfool(rdata, model)
-        #append the norm of the perturbation required to shift the image
-        pert_norms.append(np.linalg.norm(r))
-        # if(batch_idx%100==0):
-        #     print(batch_idx)
-
-    pert_norms = np.array(pert_norms)
-    # print('len of total query deep fools ',len(pert_norms))
-    min_norms = pert_norms.argsort()[:query]
-    # print(min_norms)
-
-    add_labels = [unlabelled_mask_rand[i] for i in min_norms]
-    labelled_mask = labelled_mask + add_labels
-    unlabelled_mask = [x for x in unlabelled_mask if x not in add_labels]
-    # lm = len(labelled_mask)
-    # um = len(unlabelled_mask)
-    # print('len of labelled_mask: ',lm)
-    # print('len of unlabelled_mask: ',um)
-
 def train(args, model, device, all_lab_data_list, optimizer, epoch):
 
+    model.train()
     for j in range(10):
-
-        model.train()
+        # print(j)
+        # import pdb;pdb.set_trace()
         for batch_idx, (data, target) in enumerate(all_lab_data_list[j]):
+        # for batch_idx, (data, target) in enumerate(all_lab_data_list):
             data, target = data.to(device), target.to(device)
             optimizer.zero_grad()
-            output,last_features = model(data)
+            # import pdb;pdb.set_trace()
+            output = model(data)
 
             output2 = output.reshape(output.shape[0],output.shape[1])
             # output_softmax = F.softmax(output)
@@ -91,14 +64,14 @@ def train(args, model, device, all_lab_data_list, optimizer, epoch):
             loss.backward()
             optimizer.step()
 
-def calc_perturbation(list_list_pert,avg_pert_norms,all_unlab_data_list,model):
+def calc_perturbation(list_list_pert,avg_pert_norms,all_unlab_data_list,model, device):
 
     for i in range(10):
-
+        print(i)
         pert_norms_list = []
         pert_sum = 0; 
         for batch_idx, (data, target) in enumerate(all_unlab_data_list[i]):
-
+            print(batch_idx)
             data, target = data.to(device), target.to(device)
             rdata = np.reshape(data,(3,64,64))
 
@@ -108,33 +81,81 @@ def calc_perturbation(list_list_pert,avg_pert_norms,all_unlab_data_list,model):
             pert_sum += temp_val
             pert_norms_list.append(temp_val)
 
-        pert_sum = pert_sum/50
+        pert_sum = pert_sum/(2*class_query)
         avg_pert_norms.append(pert_sum)
         list_list_pert.append([pert_norms_list])
 
 
 
-def active_learn_hier(all_unlab_data_list,model,active_learn_iter):
+def active_learn_hier(all_unlab_data_list,model,active_learn_iter, device):
 
     global list_unlab_data_mask
     global list_lab_data_mask
     global list_selected_mask
-
+    global prev_avg_pert_norms
+    query = 10
+    class_query = 1
     list_list_pert = []
     avg_pert_norms = []
-    calc_perturbation(list_list_pert,avg_pert_norms,all_unlab_data_list,model)
+
+    calc_perturbation(list_list_pert,avg_pert_norms,all_unlab_data_list,model, device)
     print(avg_pert_norms)
 
     if active_learn_iter==0:
 
+        prev_avg_pert_norms = avg_pert_norms
+
         for j in range(10):
             jth_list = np.array(list_list_pert[j])
-            part_query = query/10
-            min_norms = pert_norms.argsort()[:part_query]
-        
-            add_labels = [list_selected_mask[j][i] for i in min_norms]
-            list_lab_data_mask[j] = list_lab_data_mask[j] + add_labels
-            list_unlab_data_mask[j] = [x for x in list_unlab_data_mask if x not in add_labels]
+            min_norms = jth_list[0].argsort()[:class_query]
+            print("query size ",class_query)
+            print("min_norms size ", np.size(min_norms))
+            
+            tmp_list = list(chain.from_iterable(list_selected_mask[j]))
+            tmp_arr = np.asarray(tmp_list)
+            
+            # add_labels = [tmp_arr[i] for i in min_norms]
+            add_labels = np.take(tmp_arr,min_norms)
+            add_labels_l = add_labels.tolist()
+            # add_labels = add_labels.tolist()
+            # import pdb;pdb.set_trace()
+            list_lab_data_mask[j][0] = list_lab_data_mask[j][0] + add_labels_l
+            list_unlab_data_mask[j][0] = [x for x in list_unlab_data_mask[j][0] if x not in add_labels_l]
+
+    else:
+
+        ec = np.array(avg_pert_norms)
+        ep = np.array(prev_avg_pert_norms)
+        prev_avg_pert_norms = avg_pert_norms
+        change_avg_pert_norms = ec - ep 
+        arr_sum = np.sum(change_avg_pert_norms)
+        arr_sum = arr_sum.astype(float)
+        change_avg_pert_norms = change_avg_pert_norms/arr_sum
+
+        for j in range(10):
+            jth_list = np.array(list_list_pert[j])
+            class_query = np.floor(query * change_avg_pert_norms[j])
+            class_query = class_query.astype(int)
+            print("query from class: ",j, "is: ",class_query)
+
+            min_norms = jth_list[0].argsort()[:class_query]
+            
+            tmp_list = list(chain.from_iterable(list_selected_mask[j]))
+            tmp_arr = np.asarray(tmp_list)
+            
+            # add_labels = [tmp_arr[i] for i in min_norms]
+            add_labels = np.take(tmp_arr,min_norms)
+            add_labels_l = add_labels.tolist()
+            print(np.size(add_labels_l))
+            if np.size(add_labels_l)!=0:
+
+                # add_labels = add_labels.tolist()
+                # import pdb;pdb.set_trace()
+                list_lab_data_mask[j][0] = list_lab_data_mask[j][0] + add_labels_l
+                print("Modified lab data list size ",np.size(list_lab_data_mask[j][0]))
+                list_unlab_data_mask[j][0] = [x for x in list_unlab_data_mask[j][0] if x not in add_labels_l]
+
+
 
 def test(args, model, device, test_loader):
     model.eval()
@@ -143,7 +164,7 @@ def test(args, model, device, test_loader):
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
-            output,last_features = model(data)
+            output = model(data)
             output2 = output.reshape(output.shape[0],output.shape[1])
             # output_softmax = F.softmax(output)
             test_loss += F.cross_entropy(output2, target, reduction='sum').item() # sum up batch loss
@@ -164,6 +185,10 @@ def main():
     # i = sys.argv[2]
     # jj = int(i,10)
     # print(jj*10)
+    global list_unlab_data_mask
+    global list_lab_data_mask
+    global list_selected_mask
+    global prev_avg_pert_norms
     jj = 1
 
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
@@ -171,7 +196,7 @@ def main():
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=10, metavar='N',
+    parser.add_argument('--epochs', type=int, default=2, metavar='N',
                         help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                         help='learning rate (default: 0.01)')
@@ -208,44 +233,47 @@ def main():
 
     active_learn_iter = 0
     print("Starting Active learning")
+
     while active_learn_iter<30:
+
 
         print('Active learning Iter: ', active_learn_iter)
 
-        kwargs = {'num_workers': 2, 'pin_memory': False}
+        # kwargs = {'num_workers': 2, 'pin_memory': False}
 
         #labelled training data
-        lab_plane_data   = torch.utils.data.DataLoader(plane_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[0]), shuffle=False , **kwargs)
-        lab_car_data   = torch.utils.data.DataLoader(car_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[1]),  shuffle=False , **kwargs)
-        lab_bird_data   = torch.utils.data.DataLoader(bird_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[2]), shuffle=False , **kwargs)
-        lab_cat_data   = torch.utils.data.DataLoader(cat_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[3]), shuffle=False , **kwargs)
-        lab_deer_data   = torch.utils.data.DataLoader(deer_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[4]), shuffle=False , **kwargs)
-        lab_dog_data   = torch.utils.data.DataLoader(dog_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[5]), shuffle=False , **kwargs)
-        lab_frog_data   = torch.utils.data.DataLoader(frog_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[6]), shuffle=False , **kwargs)
-        lab_horse_data   = torch.utils.data.DataLoader(horse_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[7]), shuffle=False , **kwargs)
-        lab_ship_data   = torch.utils.data.DataLoader(ship_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[8]), shuffle=False , **kwargs)
-        lab_truck_data   = torch.utils.data.DataLoader(truck_trainset, batch_size=1, sampler = SubsetRandomSampler(list_lab_data_mask[9]), shuffle=False , **kwargs)
+        lab_plane_data   = torch.utils.data.DataLoader(dt.plane_trainset, batch_size=32, sampler = SubsetRandomSampler(list(chain.from_iterable(list_lab_data_mask[0]))), shuffle=False , **kwargs)
+        lab_car_data   = torch.utils.data.DataLoader(dt.car_trainset, batch_size=32, sampler = SubsetRandomSampler(list(chain.from_iterable(list_lab_data_mask[1]))),  shuffle=False , **kwargs)
+        lab_bird_data   = torch.utils.data.DataLoader(dt.bird_trainset, batch_size=32, sampler = SubsetRandomSampler(list(chain.from_iterable(list_lab_data_mask[2]))), shuffle=False , **kwargs)
+        lab_cat_data   = torch.utils.data.DataLoader(dt.cat_trainset, batch_size=32, sampler = SubsetRandomSampler(list(chain.from_iterable(list_lab_data_mask[3]))), shuffle=False , **kwargs)
+        lab_deer_data   = torch.utils.data.DataLoader(dt.deer_trainset, batch_size=32, sampler = SubsetRandomSampler(list(chain.from_iterable(list_lab_data_mask[4]))), shuffle=False , **kwargs)
+        lab_dog_data   = torch.utils.data.DataLoader(dt.dog_trainset, batch_size=32, sampler = SubsetRandomSampler(list(chain.from_iterable(list_lab_data_mask[5]))), shuffle=False , **kwargs)
+        lab_frog_data   = torch.utils.data.DataLoader(dt.frog_trainset, batch_size=32, sampler = SubsetRandomSampler(list(chain.from_iterable(list_lab_data_mask[6]))), shuffle=False , **kwargs)
+        lab_horse_data   = torch.utils.data.DataLoader(dt.horse_trainset, batch_size=32, sampler = SubsetRandomSampler(list(chain.from_iterable(list_lab_data_mask[7]))), shuffle=False , **kwargs)
+        lab_ship_data   = torch.utils.data.DataLoader(dt.ship_trainset, batch_size=32, sampler = SubsetRandomSampler(list(chain.from_iterable(list_lab_data_mask[8]))), shuffle=False , **kwargs)
+        lab_truck_data   = torch.utils.data.DataLoader(dt.truck_trainset, batch_size=32, sampler = SubsetRandomSampler(list(chain.from_iterable(list_lab_data_mask[9]))), shuffle=False , **kwargs)
 
-        all_lab_data_list = [lab_plane_data , lab_car_data, lab_bird_data, lab_car_data, lab_deer_data, lab_frog_trainset, lab_horse_data, lab_ship_data, lab_truck_data]
-
+        all_lab_data_list = [lab_plane_data , lab_car_data, lab_bird_data, lab_cat_data, lab_deer_data, lab_dog_data, lab_frog_data, lab_horse_data, lab_ship_data, lab_truck_data, ]
+        # import pdb;pdb.set_trace()
+        list_selected_mask = []
         for i in range(10):
-            selected_data_mask = np.random.choice(list_unlab_data_mask[i], 2*part_query)
+            selected_data_mask = np.random.choice(list(chain.from_iterable(list_unlab_data_mask[i])), 2*class_query)
             list_selected_mask.append([selected_data_mask])
 
         # Create datasetLoaders from trainset and testset
         # classDict = {'plane':0, 'car':1, 'bird':2, 'cat':3, 'deer':4, 'dog':5, 'frog':6, 'horse':7, 'ship':8, 'truck':9}
-        plane_data   = torch.utils.data.DataLoader(plane_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[0]), shuffle=False , **kwargs)
-        car_data   = torch.utils.data.DataLoader(car_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[1]),  shuffle=False , **kwargs)
-        bird_data   = torch.utils.data.DataLoader(bird_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[2]), shuffle=False , **kwargs)
-        cat_data   = torch.utils.data.DataLoader(cat_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[3]), shuffle=False , **kwargs)
-        deer_data   = torch.utils.data.DataLoader(deer_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[4]), shuffle=False , **kwargs)
-        dog_data   = torch.utils.data.DataLoader(dog_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[5]), shuffle=False , **kwargs)
-        frog_data   = torch.utils.data.DataLoader(frog_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[6]), shuffle=False , **kwargs)
-        horse_data   = torch.utils.data.DataLoader(horse_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[7]), shuffle=False , **kwargs)
-        ship_data   = torch.utils.data.DataLoader(ship_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[8]), shuffle=False , **kwargs)
-        truck_data   = torch.utils.data.DataLoader(truck_trainset, batch_size=1, sampler = SubsetRandomSampler(list_selected_mask[9]), shuffle=False , **kwargs)
+        plane_data   = torch.utils.data.DataLoader(dt.plane_trainset, batch_size=1, sampler = SubsetRandomSampler(list(chain.from_iterable(list_selected_mask[0]))), shuffle=False , **kwargs)
+        car_data   = torch.utils.data.DataLoader(dt.car_trainset, batch_size=1, sampler = SubsetRandomSampler(list(chain.from_iterable(list_selected_mask[1]))),  shuffle=False , **kwargs)
+        bird_data   = torch.utils.data.DataLoader(dt.bird_trainset, batch_size=1, sampler = SubsetRandomSampler(list(chain.from_iterable(list_selected_mask[2]))), shuffle=False , **kwargs)
+        cat_data   = torch.utils.data.DataLoader(dt.cat_trainset, batch_size=1, sampler = SubsetRandomSampler(list(chain.from_iterable(list_selected_mask[3]))), shuffle=False , **kwargs)
+        deer_data   = torch.utils.data.DataLoader(dt.deer_trainset, batch_size=1, sampler = SubsetRandomSampler(list(chain.from_iterable(list_selected_mask[4]))), shuffle=False , **kwargs)
+        dog_data   = torch.utils.data.DataLoader(dt.dog_trainset, batch_size=1, sampler = SubsetRandomSampler(list(chain.from_iterable(list_selected_mask[5]))), shuffle=False , **kwargs)
+        frog_data   = torch.utils.data.DataLoader(dt.frog_trainset, batch_size=1, sampler = SubsetRandomSampler(list(chain.from_iterable(list_selected_mask[6]))), shuffle=False , **kwargs)
+        horse_data   = torch.utils.data.DataLoader(dt.horse_trainset, batch_size=1, sampler = SubsetRandomSampler(list(chain.from_iterable(list_selected_mask[7]))), shuffle=False , **kwargs)
+        ship_data   = torch.utils.data.DataLoader(dt.ship_trainset, batch_size=1, sampler = SubsetRandomSampler(list(chain.from_iterable(list_selected_mask[8]))), shuffle=False , **kwargs)
+        truck_data   = torch.utils.data.DataLoader(dt.truck_trainset, batch_size=1, sampler = SubsetRandomSampler(list(chain.from_iterable(list_selected_mask[9]))), shuffle=False , **kwargs)
 
-        all_unlab_data_list = [plane_data , car_data, bird_data, car_data, deer_data, frog_trainset, horse_data, ship_data, truck_data]
+        all_unlab_data_list = [plane_data , car_data, bird_data, cat_data, deer_data, dog_data, frog_data, horse_data, ship_data, truck_data]
 
         test_data = torch.utils.data.DataLoader(testset, batch_size=10,
                                           sampler = None, shuffle=False, num_workers=2)
@@ -261,24 +289,21 @@ def main():
             train(args, model, device, all_lab_data_list, optimizer, epoch)
         test(args, model, device, test_data)
 
-        active_learn_hier(all_unlab_data_list,model,active_learn_iter)
-        # active_learn(unlabelled_data,model)
-        # coreset(args, model, device, labelled_data, complete_unlabelled_data, optimizer)
-        # rand_samp()
+        active_learn_hier(all_unlab_data_list,model,active_learn_iter,device)
 
         #some check prints
-        print("active_learn over")
-        lm = len(labelled_mask)
-        um = len(unlabelled_mask)
-        print('len of labelled_mask: ',lm)
-        print('len of unlabelled_mask: ',um)
+        for kk in range(10):
+            list_unlab_data_mask[kk][0] = [x for x in list_unlab_data_mask[kk][0] if x not in list_lab_data_mask[kk][0]]
+            import pdb;pdb.set_trace()
+            print(np.size(list_lab_data_mask[kk]))
+            print(np.size(list_unlab_data_mask[kk]))
 
         # if (args.save_model):
         #     torch.save(model.state_dict(),"cifar_resnet.pt")
 
         active_learn_iter = active_learn_iter + 1
 
-        with open('results_coreset_cifar_3april_%i*.txt'%jj, 'w') as f:   
+        with open('results_hierar_8april%i.txt'%jj, 'w') as f:   
 
             for item in test_accs:
                 f.write("%s\n"%item)

@@ -11,6 +11,7 @@ from torch.utils.data.sampler import Sampler,SubsetRandomSampler
 from deep_fool import deepfool
 from vgg import content_encoder
 import random
+import sys
 
 
 import os
@@ -26,50 +27,15 @@ print('len of labelled_mask: ',lm)
 print('len of unlabelled_mask: ',um)
 test_accs = []
 
-def rand_samp():
-    
-    global labelled_mask
-    global unlabelled_mask
-    add_labels = np.random.choice(unlabelled_mask, 500)
-    labelled_mask = labelled_mask + add_labels
-    unlabelled_mask = [x for x in unlabelled_mask if x not in add_labels]
-
-def active_learn(unlabelled_data, model):
-    print("active_learn")
-    global labelled_mask
-    global unlabelled_mask
-    global unlabelled_mask_rand
-    pert_norms = []
-    for batch_idx, (data, target) in enumerate(unlabelled_data):
-        # data, target = data.to(device), target.to(device)
-        import pdb;pdb.set_trace()
-        rdata = np.reshape(data,(3,64,64))
-        r, loop_i, label_orig, label_pert, pert_image = deepfool(rdata, model)
-        #append the norm of the perturbation required to shift the image
-        pert_norms.append(np.linalg.norm(r))
-        # if(batch_idx%100==0):
-        #     print(batch_idx)
-
-    pert_norms = np.array(pert_norms)
-    # print('len of total query deep fools ',len(pert_norms))
-    min_norms = pert_norms.argsort()[:query]
-    # print(min_norms)
-
-    add_labels = [unlabelled_mask_rand[i] for i in min_norms]
-    labelled_mask = labelled_mask + add_labels
-    unlabelled_mask = [x for x in unlabelled_mask if x not in add_labels]
-    # lm = len(labelled_mask)
-    # um = len(unlabelled_mask)
-    # print('len of labelled_mask: ',lm)
-    # print('len of unlabelled_mask: ',um)
 
 def train(args, model, device, train_loader, optimizer, epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
-        output = model(data)
-        # import pdb;pdb.set_trace()
+        import pdb;pdb.set_trace()
+        output,last_features = model(data)
+
         output2 = output.reshape(output.shape[0],output.shape[1])
         # output_softmax = F.softmax(output)
         
@@ -81,6 +47,89 @@ def train(args, model, device, train_loader, optimizer, epoch):
         #         epoch, batch_idx * len(data), len(train_loader.dataset),
         #         100. * batch_idx / len(train_loader), loss.item()))
 
+def coreset(args, model, device, labelled_data, unlabelled_data, optimizer):
+
+    global labelled_mask
+    global unlabelled_mask
+
+    dist_mat_sum = np.zeros((48500,48500))
+    for itern in range(64):
+        print(itern)
+
+        # dist = torch.tensor([])
+        # dist = dist.to(device)
+        dist = []
+
+
+        for batch_idx, (data, target) in enumerate(labelled_data):
+            data, target = data.to(device), target.to(device)
+            # optimizer.zero_grad()
+            output,last_features = model(data)
+            #extracting last layer features
+            encoding = last_features[:,511,:,:]
+            x,y,z = np.shape(encoding)
+            #64 encodings of 32 (batch size) images 
+            img_encoding = encoding.reshape(x,y*z)
+
+            current_img_encoding = img_encoding[:,itern]
+            new_data = (current_img_encoding.data).cpu().numpy()
+            # dist = torch.cat([dist,current_img_encoding])
+            # import pdb; pdb.set_trace()
+            dist = np.append(dist,new_data)
+            # import pdb; pdb.set_trace()
+
+        x = np.shape(dist)
+        num_labelled = x[0]
+        print("labelled done")
+
+        for batch_idx, (data, target) in enumerate(unlabelled_data):
+            data, target = data.to(device), target.to(device)
+            # optimizer.zero_grad()
+            output,last_features = model(data)
+            #extracting last layer features
+            encoding = last_features[:,511,:,:]
+            x,y,z = np.shape(encoding)
+            #64 encodings of 32 (batch size) images 
+            img_encoding = encoding.reshape(x,y*z)
+
+            current_img_encoding = img_encoding[:,itern]
+            new_data = (current_img_encoding.data).cpu().numpy()
+            # dist = torch.cat([dist,current_img_encoding])
+            # import pdb; pdb.set_trace()
+            dist = np.append(dist,new_data)
+            # import pdb; pdb.set_trace()
+        print("unlabelled done")
+
+        # import pdb; pdb.set_trace()
+        x = np.shape(dist)
+        dist_a = np.asarray(dist)
+        dist_vec = np.reshape(dist_a,(x[0],1))
+        dist_mat = np.matmul(dist_vec,dist_vec.transpose())
+        x,y = np.shape(dist_mat)
+        sq = np.array(dist_mat.diagonal()).reshape(x,1)
+        dist_mat *= -2
+        dist_mat+=sq
+        dist_mat+=sq.transpose()
+        print("debug 6")
+        
+        dist_mat_sum = np.add(dist_mat_sum,dist_mat)
+        print("done this iter")
+
+    
+    # import pdb; pdb.set_trace()
+    xx,yy = np.shape(dist_mat_sum)
+
+    useful_dist = dist_mat_sum[0:num_labelled,num_labelled:]
+    b = np.amin(useful_dist, axis=0)
+    # import pdb; pdb.set_trace()
+    min_norms = b.argsort()[:query]
+    # print(min_norms)
+
+    add_labels = [unlabelled_mask[i] for i in min_norms]
+    labelled_mask = labelled_mask + add_labels
+    unlabelled_mask = [x for x in unlabelled_mask if x not in add_labels]
+
+
 def test(args, model, device, test_loader):
     model.eval()
     test_loss = 0
@@ -88,7 +137,7 @@ def test(args, model, device, test_loader):
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
-            output = model(data)
+            output,last_features = model(data)
             output2 = output.reshape(output.shape[0],output.shape[1])
             # output_softmax = F.softmax(output)
             test_loss += F.cross_entropy(output2, target, reduction='sum').item() # sum up batch loss
@@ -106,6 +155,10 @@ def main():
     # Training settings
     # np.random.seed(2)
 
+    i = sys.argv[2]
+    jj = int(i,10)
+    print(jj*10)
+
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 64)')
@@ -121,6 +174,8 @@ def main():
                         help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=2, metavar='S',
                         help='random seed (default: 1)')
+    parser.add_argument('--iterNum', type=int, default=1, metavar='S',
+                        help='iter num')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
     
@@ -150,7 +205,7 @@ def main():
 
     active_learn_iter = 0
     print("Starting Active learning")
-    while active_learn_iter<50:
+    while active_learn_iter<30:
 
         print('Active learning Iter: ', active_learn_iter)
         labelled_data = torch.utils.data.DataLoader(trainset, batch_size=32,
@@ -163,6 +218,9 @@ def main():
         unlabelled_data = torch.utils.data.DataLoader(trainset, batch_size=1,
                                               sampler = SubsetRandomSampler(unlabelled_mask_rand), shuffle=False, num_workers=2)
         
+        complete_unlabelled_data = torch.utils.data.DataLoader(trainset, batch_size=32,
+                                              sampler = SubsetRandomSampler(unlabelled_mask), shuffle=False, num_workers=2)      
+
         test_data = torch.utils.data.DataLoader(testset, batch_size=10,
                                           sampler = None, shuffle=False, num_workers=2)
 
@@ -182,7 +240,8 @@ def main():
             train(args, model, device, labelled_data, optimizer, epoch)
         test(args, model, device, test_data)
 
-        active_learn(unlabelled_data,model)
+        # active_learn(unlabelled_data,model)
+        coreset(args, model, device, labelled_data, complete_unlabelled_data, optimizer)
         # rand_samp()
         print("active_learn over")
         lm = len(labelled_mask)
@@ -195,8 +254,7 @@ def main():
 
         active_learn_iter = active_learn_iter + 1
 
-
-        with open('results_adversarial_cifar_2april.txt', 'w') as f:   
+        with open('results_coreset_cifar_3april_%i*.txt'%jj, 'w') as f:   
 
             for item in test_accs:
                 f.write("%s\n"%item)
